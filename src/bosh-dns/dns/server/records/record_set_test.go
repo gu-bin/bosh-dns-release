@@ -993,6 +993,484 @@ var _ = Describe("RecordSet", func() {
 			})
 		})
 
+		Describe("Filter", func() {
+			Context("when there are records matching the query based fqdn", func() {
+				BeforeEach(func() {
+					jsonBytes := []byte(`{
+					"record_keys":
+						["id", "num_id", "instance_group", "group_ids", "az", "az_id", "network", "network_id", "deployment", "ip", "domain", "instance_index"],
+					"record_infos": [
+						["instance0", "0", "my-group", ["1"], "az1", "1", "my-network", "1", "my-deployment", "123.123.123.123", "my-domain", 1],
+						["instance1", "1", "my-group", ["1"], "az2", "2", "my-network", "1", "my-deployment", "123.123.123.124", "my-domain", 2],
+						["instance1", "2", "my-group", ["1"], "az3", "3", "my-network", "1", "my-deployment", "123.123.123.126", "my-domain", 0],
+						["instance2", "3", "my-group-2", ["2"], "az1", "1", "my-network", "1", "my-deployment", "123.123.123.125", "my-domain", 1],
+						["instance4", "4", "my-group", ["1"], "az4", "4", "another-network", "2", "my-deployment", "123.123.123.127", "my-domain", 0]
+					]
+				}`)
+					fileReader.GetReturns(jsonBytes, nil)
+
+					var err error
+					recordSet, err = records.NewRecordSet(fileReader, aliasList, fakeHealthWatcher, uint(5), shutdownChan, fakeLogger)
+
+					Expect(err).ToNot(HaveOccurred())
+				})
+
+				Context("when the query is for 'status=healthy'", func() {
+					It("returns all records matching the my-group.my-network.my-deployment.my-domain portion of the fqdn", func() {
+						rs, err := recordSet.Filter([]string{"q-s0.my-group.my-network.my-deployment.my-domain."})
+						Expect(err).ToNot(HaveOccurred())
+						Expect(rs).To(HaveLen(3))
+						Expect(rs).To(ContainElement(records.Record{
+							ID:            "instance0",
+							NumID:         "0",
+							Group:         "my-group",
+							GroupIDs:      []string{"1"},
+							Network:       "my-network",
+							NetworkID:     "1",
+							Deployment:    "my-deployment",
+							IP:            "123.123.123.123",
+							Domain:        "my-domain.",
+							AZ:            "az1",
+							AZID:          "1",
+							InstanceIndex: "1",
+						}))
+						Expect(rs).To(ContainElement(records.Record{
+							ID:            "instance1",
+							NumID:         "1",
+							Group:         "my-group",
+							GroupIDs:      []string{"1"},
+							Network:       "my-network",
+							NetworkID:     "1",
+							Deployment:    "my-deployment",
+							IP:            "123.123.123.124",
+							Domain:        "my-domain.",
+							AZ:            "az2",
+							AZID:          "2",
+							InstanceIndex: "2",
+						}))
+						Expect(rs).To(ContainElement(records.Record{
+							ID:            "instance1",
+							NumID:         "2",
+							Group:         "my-group",
+							GroupIDs:      []string{"1"},
+							Network:       "my-network",
+							NetworkID:     "1",
+							Deployment:    "my-deployment",
+							IP:            "123.123.123.126",
+							Domain:        "my-domain.",
+							AZ:            "az3",
+							AZID:          "3",
+							InstanceIndex: "0",
+						}))
+					})
+
+					It("interprets short group queries the same way", func() {
+						rs, err := recordSet.Filter([]string{"q-s0.q-g1.my-domain."})
+						Expect(err).ToNot(HaveOccurred())
+						Expect(rs).To(HaveLen(4))
+						Expect(rs).To(ContainElement(
+							records.Record{
+								ID:            "instance0",
+								NumID:         "0",
+								Group:         "my-group",
+								GroupIDs:      []string{"1"},
+								Network:       "my-network",
+								NetworkID:     "1",
+								Deployment:    "my-deployment",
+								IP:            "123.123.123.123",
+								Domain:        "my-domain.",
+								AZ:            "az1",
+								AZID:          "1",
+								InstanceIndex: "1",
+							}))
+						Expect(rs).To(ContainElement(
+							records.Record{
+								ID:            "instance1",
+								NumID:         "2",
+								Group:         "my-group",
+								GroupIDs:      []string{"1"},
+								Network:       "my-network",
+								NetworkID:     "1",
+								Deployment:    "my-deployment",
+								IP:            "123.123.123.126",
+								Domain:        "my-domain.",
+								AZ:            "az3",
+								AZID:          "3",
+								InstanceIndex: "0",
+							}))
+						Expect(rs).To(ContainElement(
+							records.Record{
+								ID:            "instance4",
+								NumID:         "4",
+								Group:         "my-group",
+								GroupIDs:      []string{"1"},
+								Network:       "another-network",
+								NetworkID:     "2",
+								Deployment:    "my-deployment",
+								IP:            "123.123.123.127",
+								Domain:        "my-domain.",
+								AZ:            "az4",
+								AZID:          "4",
+								InstanceIndex: "0",
+							}))
+						Expect(rs).To(ContainElement(
+							records.Record{
+								ID:            "instance1",
+								NumID:         "1",
+								Group:         "my-group",
+								GroupIDs:      []string{"1"},
+								Network:       "my-network",
+								NetworkID:     "1",
+								Deployment:    "my-deployment",
+								IP:            "123.123.123.124",
+								Domain:        "my-domain.",
+								AZ:            "az2",
+								AZID:          "2",
+								InstanceIndex: "2",
+							}))
+					})
+				})
+
+				It("can find specific instances using short group queries", func() {
+					rs, err := recordSet.Filter([]string{"instance0.q-g1.my-domain."})
+					Expect(err).ToNot(HaveOccurred())
+					Expect(rs).To(HaveLen(1))
+					Expect(rs).To(ContainElement(
+						records.Record{
+							ID:            "instance0",
+							NumID:         "0",
+							Group:         "my-group",
+							GroupIDs:      []string{"1"},
+							Network:       "my-network",
+							NetworkID:     "1",
+							Deployment:    "my-deployment",
+							IP:            "123.123.123.123",
+							Domain:        "my-domain.",
+							AZ:            "az1",
+							AZID:          "1",
+							InstanceIndex: "1",
+						}))
+				})
+
+				Context("when the query contains poorly formed contents", func() {
+					It("returns an empty set", func() {
+						rs, err := recordSet.Filter([]string{"q-missingvalue.my-group.my-network.my-deployment.my-domain."})
+						Expect(err).To(HaveOccurred())
+						Expect(len(rs)).To(Equal(0))
+					})
+				})
+
+				FContext("when the query does not include any filters", func() {
+					// TODO: What is the correct behavior when about
+					It("returns all records matching the my-group.my-network.my-deployment.my-domain portion of the fqdn", func() {
+						rs, err := recordSet.Filter([]string{"q-.my-group.my-network.my-deployment.my-domain."})
+						Expect(err).To(HaveOccurred())
+						Expect(rs).To(HaveLen(0))
+					})
+				})
+
+				// 		Context("when the query includes unrecognized filters", func() {
+				// 			It("returns an empty set", func() {
+				// 				ips, err := recordSet.Resolve("q-x1.my-group.my-network.my-deployment.my-domain.")
+				// 				Expect(err).To(HaveOccurred())
+				// 				Expect(len(ips)).To(Equal(0))
+				// 			})
+				// 		})
+
+				// 		Describe("filtering by index", func() {
+				// 			Context("when the query includes a single index", func() {
+				// 				It("only returns records that have the index", func() {
+				// 					ips, err := recordSet.Resolve("q-i2.my-group.my-network.my-deployment.my-domain.")
+				// 					Expect(err).ToNot(HaveOccurred())
+				// 					Expect(ips).To(HaveLen(1))
+				// 					Expect(ips).To(ContainElement("123.123.123.124"))
+				// 				})
+				// 			})
+
+				// 			Context("when the query includes a single index", func() {
+				// 				It("only returns records that have the index", func() {
+				// 					ips, err := recordSet.Resolve("q-i2i0.my-group.my-network.my-deployment.my-domain.")
+				// 					Expect(err).ToNot(HaveOccurred())
+				// 					Expect(ips).To(HaveLen(2))
+				// 					Expect(ips).To(ContainElement("123.123.123.124"))
+				// 					Expect(ips).To(ContainElement("123.123.123.126"))
+				// 				})
+				// 			})
+
+				// 			Context("when the query includes an index that isn't known", func() {
+				// 				It("returns an empty set", func() {
+				// 					ips, err := recordSet.Resolve("q-i5.my-group.my-network.my-deployment.my-domain.")
+				// 					Expect(err).ToNot(HaveOccurred())
+				// 					Expect(ips).To(HaveLen(0))
+				// 				})
+				// 			})
+				// 		})
+
+				// 		Describe("filtering by global index", func() {
+				// 			Context("when the query includes a global index", func() {
+				// 				It("only returns records that are in that global index", func() {
+				// 					ips, err := recordSet.Resolve("q-m1.my-group.my-network.my-deployment.my-domain.")
+				// 					Expect(err).ToNot(HaveOccurred())
+				// 					Expect(ips).To(HaveLen(1))
+				// 					Expect(ips).To(ContainElement("123.123.123.124"))
+				// 				})
+				// 			})
+
+				// 			Context("when the query includes a global index that isn't known", func() {
+				// 				It("returns an empty set", func() {
+				// 					ips, err := recordSet.Resolve("q-m12.my-group.my-network.my-deployment.my-domain.")
+				// 					Expect(err).ToNot(HaveOccurred())
+				// 					Expect(len(ips)).To(Equal(0))
+				// 				})
+				// 			})
+				// 		})
+
+				// 		Describe("filtering by network id", func() {
+				// 			Context("when the query includes a network ID", func() {
+				// 				It("only returns records that are in that network ID", func() {
+				// 					ips, err := recordSet.Resolve("q-n1.my-group.my-network.my-deployment.my-domain.")
+				// 					Expect(err).ToNot(HaveOccurred())
+				// 					Expect(ips).To(HaveLen(3))
+				// 					Expect(ips).To(ContainElement("123.123.123.123"))
+				// 					Expect(ips).To(ContainElement("123.123.123.124"))
+				// 					Expect(ips).To(ContainElement("123.123.123.126"))
+				// 				})
+				// 			})
+
+				// 			Context("when the query includes a network ID that isn't known", func() {
+				// 				It("returns an empty set", func() {
+				// 					ips, err := recordSet.Resolve("q-n12.my-group.my-network.my-deployment.my-domain.")
+				// 					Expect(err).ToNot(HaveOccurred())
+				// 					Expect(len(ips)).To(Equal(0))
+				// 				})
+				// 			})
+				// 		})
+
+				// 		Describe("filtering by AZ", func() {
+				// 			Context("when the query includes an az id", func() {
+				// 				It("only returns records that are in that az", func() {
+				// 					ips, err := recordSet.Resolve("q-a1.my-group.my-network.my-deployment.my-domain.")
+				// 					Expect(err).ToNot(HaveOccurred())
+				// 					Expect(ips).To(HaveLen(1))
+				// 					Expect(ips).To(ContainElement("123.123.123.123"))
+				// 				})
+				// 			})
+
+				// 			Context("when the query includes multiple az ids", func() {
+				// 				It("returns records that are in any of those azs", func() {
+				// 					ips, err := recordSet.Resolve("q-a1a3.my-group.my-network.my-deployment.my-domain.")
+				// 					Expect(err).ToNot(HaveOccurred())
+				// 					Expect(ips).To(HaveLen(2))
+				// 					Expect(ips).To(ContainElement("123.123.123.123"))
+				// 					Expect(ips).To(ContainElement("123.123.123.126"))
+				// 				})
+				// 			})
+
+				// 			Context("when the query includes an AZ index that isn't known", func() {
+				// 				It("returns an empty set", func() {
+				// 					ips, err := recordSet.Resolve("q-a6.my-group.my-network.my-deployment.my-domain.")
+				// 					Expect(err).ToNot(HaveOccurred())
+				// 					Expect(len(ips)).To(Equal(0))
+				// 				})
+				// 			})
+				// 		})
+
+				// 		Describe("filtering by both AZ and index", func() {
+				// 			/*
+				// 				context:
+				// 					az1: 0, 1
+				// 					az2: 2, 3, 4
+				// 					az3: 5
+				// 			*/
+				// 			BeforeEach(func() {
+				// 				jsonBytes := []byte(`
+				// 				{
+				// 					"record_keys":
+				// 						["id", 				"instance_group", "az", "az_id", "network", 		 "deployment", 		"ip", 						 "domain",  	"instance_index"],
+				// 					"record_infos": [
+				// 						["instance0", "my-group",       "az1", "1",    "my-network", 	 "my-deployment", "123.123.123.123", "my-domain", 0],
+				// 						["instance1", "my-group",       "az1", "1",    "my-network", 	 "my-deployment", "123.123.123.124", "my-domain", 1],
+				// 						["instance2", "my-group",       "az2", "2",    "my-network", 	 "my-deployment", "123.123.123.125", "my-domain", 2],
+				// 						["instance3", "my-group",       "az2", "2",    "my-network", 	 "my-deployment", "123.123.123.126", "my-domain", 3],
+				// 						["instance4", "my-group",       "az2", "2",    "my-network", 	 "my-deployment", "123.123.123.127", "my-domain", 4],
+				// 						["instance5", "my-group",       "az3", "3",    "my-network", 	 "my-deployment", "123.123.123.128", "my-domain", 5]
+				// 					]
+				// 				}
+				// 			`)
+				// 				fileReader.GetReturns(jsonBytes, nil)
+
+				// 				var err error
+				// 				recordSet, err = records.NewRecordSet(fileReader, aliasList, fakeHealthWatcher, uint(5), shutdownChan, fakeLogger)
+				// 				Expect(err).ToNot(HaveOccurred())
+				// 			})
+
+				// 			It("matches one index across multiple AZs", func() {
+				// 				/*
+				// 					query: (az2 OR az3) AND i2
+				// 					expected: az2 i2
+				// 				*/
+				// 				ips, err := recordSet.Resolve("q-a2a3i2.my-group.my-network.my-deployment.my-domain.")
+				// 				Expect(err).NotTo(HaveOccurred())
+				// 				Expect(ips).To(HaveLen(1))
+				// 				Expect(ips).To(ContainElement("123.123.123.125"))
+				// 			})
+
+				// 			It("match multiple indexes on one AZ", func() {
+				// 				/*
+				// 					query: az2 AND (i2 OR i3)
+				// 					expected: az2 i2 or i3
+				// 				*/
+				// 				ips, err := recordSet.Resolve("q-a2i2i3.my-group.my-network.my-deployment.my-domain.")
+				// 				Expect(err).NotTo(HaveOccurred())
+				// 				Expect(ips).To(HaveLen(2))
+				// 				Expect(ips).To(ContainElement("123.123.123.125"))
+				// 				Expect(ips).To(ContainElement("123.123.123.126"))
+				// 			})
+
+				// 			It("match multiple indexes on multiple AZs", func() {
+				// 				/*
+				// 					query: (az1 OR az2) AND (i2 OR i1)
+				// 					expected: az1 i1, az2 i2
+				// 				*/
+				// 				ips, err := recordSet.Resolve("q-a1a2i2i1.my-group.my-network.my-deployment.my-domain.")
+				// 				Expect(err).NotTo(HaveOccurred())
+				// 				Expect(ips).To(HaveLen(2))
+				// 				Expect(ips).To(ContainElement("123.123.123.124"))
+				// 				Expect(ips).To(ContainElement("123.123.123.125"))
+				// 			})
+
+				// 			It("doesn't match a non-existent index on multiple AZs", func() {
+				// 				/*
+				// 					query: (az2 OR az3) AND i0
+				// 					expected: nothing
+				// 				*/
+				// 				ips, err := recordSet.Resolve("q-a2a3i0.my-group.my-network.my-deployment.my-domain.")
+				// 				Expect(err).NotTo(HaveOccurred())
+				// 				Expect(ips).To(HaveLen(0))
+				// 			})
+
+				// 			Context("when there are records that only differ in domains", func() {
+				// 				BeforeEach(func() {
+				// 					jsonBytes := []byte(` {
+				// 					"record_keys":
+				// 						["id",        "instance_group", "az", "az_id", "network",    "deployment", 		"ip", 						 "domain",  	"instance_index"],
+				// 					"record_infos": [
+				// 						["instance0", "my-group",       "az1", "1",    "my-network", "my-deployment", "123.123.123.123", "my-domain", 0],
+				// 						["instance0", "my-group",       "az1", "1",    "my-network", "my-deployment", "123.123.123.124", "another-domain", 1]
+				// 					]
+				// 				}`)
+				// 					fileReader.GetReturns(jsonBytes, nil)
+
+				// 					var err error
+				// 					recordSet, err = records.NewRecordSet(fileReader, aliasList, fakeHealthWatcher, uint(5), shutdownChan, fakeLogger)
+
+				// 					Expect(err).ToNot(HaveOccurred())
+				// 				})
+
+				// 				It("should be able to filter on domain", func() {
+				// 					ips, err := recordSet.Resolve("instance0.my-group.my-network.my-deployment.another-domain.")
+				// 					Expect(err).NotTo(HaveOccurred())
+				// 					Expect(ips).To(HaveLen(1))
+				// 				})
+				// 			})
+
+				// 			Context("when there are records matching the specified fqdn", func() {
+				// 				BeforeEach(func() {
+				// 					jsonBytes := []byte(`{
+				// 					"record_keys": ["id", "instance_group", "az", "az_id", "network", "deployment", "ip", "domain"],
+				// 					"record_infos": [
+				// 						["my-instance", "my-group", "az1", "1", "my-network", "my-deployment", "123.123.123.123", "potato"],
+				// 						["my-instance", "my-group", "az1", "1", "my-network", "my-deployment", "123.123.123.124", "potato"]
+				// 					]
+				// 				}`)
+				// 					fileReader.GetReturns(jsonBytes, nil)
+
+				// 					var err error
+				// 					recordSet, err = records.NewRecordSet(fileReader, aliasList, fakeHealthWatcher, uint(5), shutdownChan, fakeLogger)
+				// 					Expect(err).ToNot(HaveOccurred())
+				// 				})
+
+				// 				It("returns all records for that name", func() {
+				// 					records, err := recordSet.Resolve("my-instance.my-group.my-network.my-deployment.potato.")
+				// 					Expect(err).NotTo(HaveOccurred())
+
+				// 					Expect(records).To(ContainElement("123.123.123.123"))
+				// 					Expect(records).To(ContainElement("123.123.123.124"))
+				// 				})
+
+				// 				Context("when there are no records matching the specified domain", func() {
+				// 					It("returns an empty set of records", func() {
+				// 						records, err := recordSet.Resolve("my-instance.my-group.my-network.my-deployment.wrong-domain.")
+				// 						Expect(err).NotTo(HaveOccurred())
+
+				// 						Expect(records).To(HaveLen(0))
+				// 					})
+				// 				})
+
+				// 				Context("when there are no records matching the specified fqdn", func() {
+				// 					It("returns an empty set of records", func() {
+				// 						records, err := recordSet.Resolve("some.garbage.fqdn.deploy.potato")
+				// 						Expect(err).NotTo(HaveOccurred())
+
+				// 						Expect(records).To(HaveLen(0))
+				// 					})
+				// 				})
+				// 			})
+
+				// 			Context("when fqdn is already an IP address", func() {
+				// 				It("return the IP back", func() {
+				// 					records, err := recordSet.Resolve("123.123.123.123")
+				// 					Expect(err).NotTo(HaveOccurred())
+
+				// 					Expect(records).To(ContainElement("123.123.123.123"))
+				// 				})
+				// 			})
+
+				// 			Context("when the records json includes instance_index", func() {
+				// 				BeforeEach(func() {
+				// 					jsonBytes := []byte(`{
+				// 					"record_keys": ["id", "instance_group", "az", "az_id", "network", "deployment", "ip", "domain", "instance_index"],
+				// 					"record_infos": [
+				// 						["instance0", "my-group", "az1", "1", "my-network", "my-deployment", "123.123.123.123", "domain.", 0],
+				// 						["instance1", "my-group", "az2", "1", "my-network", "my-deployment", "123.123.123.124", "domain.", 1]
+				// 					]
+				// 				}`)
+				// 					fileReader.GetReturns(jsonBytes, nil)
+
+				// 					var err error
+				// 					recordSet, err = records.NewRecordSet(fileReader, aliasList, fakeHealthWatcher, uint(5), shutdownChan, fakeLogger)
+				// 					Expect(err).ToNot(HaveOccurred())
+				// 				})
+
+				// 				It("parses the instance index", func() {
+				// 					Expect(recordSet.Records).To(WithTransform(dereferencer, ContainElement(records.Record{
+				// 						ID:            "instance0",
+				// 						Group:         "my-group",
+				// 						Network:       "my-network",
+				// 						Deployment:    "my-deployment",
+				// 						IP:            "123.123.123.123",
+				// 						Domain:        "domain.",
+				// 						AZ:            "az1",
+				// 						AZID:          "1",
+				// 						InstanceIndex: "0",
+				// 					})))
+				// 					Expect(recordSet.Records).To(WithTransform(dereferencer, ContainElement(records.Record{
+				// 						ID:            "instance1",
+				// 						Group:         "my-group",
+				// 						Network:       "my-network",
+				// 						Deployment:    "my-deployment",
+				// 						IP:            "123.123.123.124",
+				// 						Domain:        "domain.",
+				// 						AZ:            "az2",
+				// 						AZID:          "1",
+				// 						InstanceIndex: "1",
+				// 					})))
+				// 				})
+				// 			})
+				// 		})
+			})
+		})
+
 		Context("when resolving aliases", func() {
 			BeforeEach(func() {
 				aliasList = aliases.MustNewConfigFromMap(map[string][]string{
