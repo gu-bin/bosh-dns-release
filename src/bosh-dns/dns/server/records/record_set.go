@@ -114,6 +114,7 @@ func (r *RecordSet) Resolve(fqdn string) ([]string, error) {
 
 	finalIPs := make([]string, len(finalRecords))
 	for i, rec := range finalRecords {
+		r.healthWatcher.Track(rec.IP)
 		finalIPs[i] = rec.IP
 	}
 
@@ -199,7 +200,6 @@ func (r *RecordSet) segregateIPs(records []Record, fqdn string) ([]Record, []Rec
 		r.trackedIPs[record.IP][fqdn] = struct{}{}
 		r.trackedIPsMutex.Unlock()
 
-		r.healthWatcher.Track(record.IP)
 		if r.healthWatcher.IsHealthy(record.IP) {
 			healthyIPs = append(healthyIPs, record)
 		} else {
