@@ -1022,6 +1022,21 @@ var _ = Describe("RecordSet", func() {
 				Expect(err).ToNot(HaveOccurred())
 			})
 
+			Describe("expanding aliases", func() {
+				It("expands aliases to hosts", func() {
+					expandedAliases := recordSet.ExpandAliases("q-s0.alias2.")
+					Expect(expandedAliases).To(Equal([]string{"q-s0.my-group.my-network.my-deployment.a2_domain1.",
+						"q-s0.my-group.my-network.my-deployment.b2_domain1.",
+					}))
+				})
+			})
+
+			Describe("all records", func() {
+				It("returns all records", func() {
+					Expect(recordSet.AllRecords()).To(Equal(&recordSet.Records))
+				})
+			})
+
 			Context("when the message contains a underscore style alias", func() {
 				It("translates the question preserving the capture", func() {
 					resolutions, err := recordSet.Resolve("q-s0.alias2.")

@@ -418,6 +418,38 @@ var _ = Describe("main", func() {
 						},
 					}))
 				})
+
+				It("allows for querying specific addresses", func() {
+					address := fmt.Sprintf("http://%s:%d/instances?address=q-s0.my-group.my-network.my-deployment.bosh.", listenAddress, listenAPIPort)
+					resp, err := http.Get(address)
+					Expect(err).NotTo(HaveOccurred())
+					defer resp.Body.Close()
+
+					Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+					var parsed []api.Record
+					decoder := json.NewDecoder(resp.Body)
+					var nextRecord api.Record
+					for decoder.More() {
+						err = decoder.Decode(&nextRecord)
+						Expect(err).ToNot(HaveOccurred())
+						parsed = append(parsed, nextRecord)
+					}
+
+					Expect(parsed).To(ConsistOf([]api.Record{
+						{
+							ID:          "my-instance",
+							Group:       "my-group",
+							Network:     "my-network",
+							Deployment:  "my-deployment",
+							IP:          "127.0.0.1",
+							Domain:      "bosh.",
+							AZ:          "az1",
+							Index:       "",
+							HealthState: "healthy",
+						},
+					}))
+				})
 			})
 		})
 
