@@ -11,6 +11,7 @@ groups:
   - test-acceptance-windows
   - brats-ubuntu
   - finalize-release
+  - delivery
 
 jobs:
 - name: test-unit
@@ -162,6 +163,21 @@ jobs:
         tag: /tmp/build/put/tag/tag-name
         annotate: /tmp/build/put/tag/annotate-msg
 
+- name: delivery
+  plan:
+    - aggregate:
+      - get: bosh-dns-release
+        version: every
+        trigger: true
+        passed:
+        - test-acceptance
+        - test-acceptance-windows
+        - brats-ubuntu
+    - put: tracker-output
+      params:
+        repos:
+        - bosh-dns-release
+
 resources:
 - name: bosh-dns-release
   type: git
@@ -250,3 +266,10 @@ resources:
     branch: master
     uri: git@github.com:cloudfoundry/dns-release-ci-envs.git
     private_key: {{envs_private_key}}
+
+- name: tracker-output
+  type: tracker
+  source:
+    token: ((tracker_api_token))
+    project_id: "((tracker_project_id))"
+    tracker_url: https://www.pivotaltracker.com
