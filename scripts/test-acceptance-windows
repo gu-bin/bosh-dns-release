@@ -29,18 +29,18 @@ main() {
 
   echo "### starting windows-specific tests..."
   # windows specfic
-  fly -t production execute --privileged \
-    --config="${task_dir}/test-acceptance-windows.yml" \
-    --inputs-from=bosh-dns-release/test-acceptance-windows \
-    --input=bosh-dns-release="${release_dir}" \
-    --input=candidate-release="${tarball_dir}"
+  # fly -t production execute --privileged \
+  #   --config="${task_dir}/test-acceptance-windows.yml" \
+  #   --inputs-from=bosh-dns-release/test-acceptance-windows \
+  #   --input=bosh-dns-release="${release_dir}" \
+  #   --input=candidate-release="${tarball_dir}"
 
   # nameserver-disabled
-  echo "### tests: nameserver-disabled"
-  fly -t production execute --privileged \
-    --config="${task_dir}/test-acceptance-windows-nameserver-disabled.yml" \
-    --inputs-from=bosh-dns-release/test-acceptance-windows \
-    --input=bosh-dns-release="${release_dir}"
+  # echo "### tests: nameserver-disabled"
+  # fly -t production execute --privileged \
+  #   --config="${task_dir}/test-acceptance-windows-nameserver-disabled.yml" \
+  #   --inputs-from=bosh-dns-release/test-acceptance-windows \
+  #   --input=bosh-dns-release="${release_dir}"
 
   # shared
   echo "### tests: shared"

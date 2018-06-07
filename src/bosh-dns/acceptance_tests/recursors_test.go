@@ -39,7 +39,7 @@ var _ = Describe("recursor", func() {
 			recursorSession.Kill()
 		})
 
-		It("fowards queries to the configured recursors on port 53", func() {
+		FIt("fowards queries to the configured recursors on port 53", func() {
 			cmd := exec.Command("dig",
 				"-t", "A",
 				"example.com", fmt.Sprintf("@%s", firstInstance.IP),
