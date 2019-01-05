@@ -2,10 +2,12 @@ package acceptance
 
 import (
 	"bosh-dns/acceptance_tests/helpers"
+	gomegadns "bosh-dns/gomega-dns"
 	"fmt"
 	"regexp"
 	"strings"
 
+	"github.com/miekg/dns"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
@@ -159,23 +161,30 @@ var _ = Describe("Integration", func() {
 			}, 31*time.Second).Should(Equal("running"))
 		})
 
-		It("stops returning IP addresses of instances whose status becomes unknown", func() {
+		FIt("stops returning IP addresses of instances whose status becomes unknown", func() {
 			var output string
 			Expect(len(allDeployedInstances)).To(BeNumerically(">", 1))
 
-			cmd := exec.Command("dig", strings.Split(fmt.Sprintf("-t A q-s0.bosh-dns.default.bosh-dns.bosh @%s", firstInstance.IP), " ")...)
-			session, err := gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-			Expect(err).NotTo(HaveOccurred())
+			dnsResponse := helpers.Dig("q-s0.bosh-dns.default.bosh-dns.bosh.", firstInstance.IP)
+			Expect(dnsResponse).To(gomegadns.HaveFlags("qr", "aa", "rd", "ra"))
 
-			Eventually(session).Should(gexec.Exit(0))
-
-			output = string(session.Out.Contents())
-			Expect(output).To(ContainSubstring("Got answer:"))
-			Expect(output).To(ContainSubstring("flags: qr aa rd ra; QUERY: 1, ANSWER: %d, AUTHORITY: 0, ADDITIONAL: 0", len(allDeployedInstances)))
-			for _, info := range allDeployedInstances {
-				Expect(output).To(MatchRegexp("q-s0\\.bosh-dns\\.default\\.bosh-dns\\.bosh\\.\\s+0\\s+IN\\s+A\\s+%s", info.IP))
+			getIP := func(m dns.RR) string {
+				return m.(*dns.A).A.String()
 			}
-			Eventually(session.Out).Should(gbytes.Say(fmt.Sprintf("SERVER: %s#53", firstInstance.IP)))
+
+			getTTL := func(m dns.RR) int {
+				return int(m.Header().Ttl)
+			}
+
+			Expect(dnsResponse.Answer).To(HaveLen(len(allDeployedInstances)))
+			for _, info := range allDeployedInstances {
+				Expect(dnsResponse.Answer).To(ContainElement(
+					SatisfyAll(
+						WithTransform(getIP, Equal(info.IP)),
+						WithTransform(getTTL, Equal(0)),
+					),
+				))
+			}
 
 			secondInstanceSlug := fmt.Sprintf("%s/%s", allDeployedInstances[1].InstanceGroup, allDeployedInstances[1].InstanceID)
 			helpers.Bosh("stop", secondInstanceSlug)
