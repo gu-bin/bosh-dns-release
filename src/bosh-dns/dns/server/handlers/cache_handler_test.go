@@ -25,15 +25,13 @@ var _ bool = Describe("CacheHandler", func() {
 
 	Describe("ServeDNS", func() {
 		Context("when the request doesn't have recursion desired bit set", func() {
-			It("forwards the question up to a recursor", func() {
+			It("responds with rcode refused", func() {
 				m := &dns.Msg{}
 				m.SetQuestion("my-instance.my-group.my-network.my-deployment.bosh.", dns.TypeANY)
 				m.RecursionDesired = false
 				cacheHandler.ServeDNS(fakeWriter, m)
-				Expect(fakeDnsHandler.ServeDNSCallCount()).To(Equal(1))
-				forwardedWriter, forwardedMsg := fakeDnsHandler.ServeDNSArgsForCall(0)
-				Expect(forwardedWriter).To(Equal(fakeWriter))
-				Expect(forwardedMsg).To(Equal(m))
+				message := fakeWriter.WriteMsgArgsForCall(0)
+				Expect(message.Rcode).To(Equal(dns.RcodeRefused))
 			})
 		})
 	})

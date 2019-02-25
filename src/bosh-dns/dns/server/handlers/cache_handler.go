@@ -27,8 +27,12 @@ func NewCachingDNSHandler(next dns.Handler) CachingDNSHandler {
 }
 
 func (c CachingDNSHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
+	m := &dns.Msg{}
 	if !r.RecursionDesired {
-		c.next.ServeDNS(w, r)
+		m.SetRcode(r, dns.RcodeRefused)
+		if err := w.WriteMsg(m); err != nil {
+			c.logger.Error(c.logTag, err.Error())
+		}
 		return
 	}
 
